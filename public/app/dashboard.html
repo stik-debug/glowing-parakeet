@@ -14,9 +14,8 @@
       <nav class="side-nav">
         <a class="active" href="/app/dashboard.html">Dashboard</a>
         <a href="/app/members.html">Members</a>
-        <a href="#" style="opacity:0.5;pointer-events:none">Contributions (soon)</a>
-        <a href="#" style="opacity:0.5;pointer-events:none">Loans (soon)</a>
-        <a href="#" style="opacity:0.5;pointer-events:none">Meetings (soon)</a>
+        <a href="/app/ops.html">Operations</a>
+        <a href="/app/admin.html">Admin</a>
       </nav>
       <button class="btn btn-secondary" style="margin-top:1rem;width:100%" id="logout">Log out</button>
     </aside>
@@ -46,9 +45,9 @@
             <div class="hint" id="subEnd">—</div>
           </div>
           <div class="stat-card">
-            <div class="label">Total savings</div>
-            <div class="value" style="font-size:1.15rem;color:var(--slate-500)">KES 0</div>
-            <div class="hint">Contributions module coming next</div>
+            <div class="label">Contributions</div>
+            <div class="value" id="contribTotal" style="font-size:1.15rem">—</div>
+            <div class="hint">All recorded contributions</div>
           </div>
         </div>
 
@@ -66,10 +65,10 @@
         </div>
 
         <div class="panel">
-          <h3>Coming next on your roadmap</h3>
-          <p style="color:var(--slate-500);font-size:0.9rem;margin:0">
-            Contributions + ledger · Loans & repayments · Fines · Meetings · Messaging · M-Pesa subscription payments · SUPER_ADMIN console.
-            Member limits and multi-tenant security are already enforced on the server.
+          <h3>Quick links</h3>
+          <p style="margin:0">
+            <a class="btn btn-primary" href="/app/ops.html" style="margin-right:0.5rem">Open Operations</a>
+            <a class="btn btn-secondary" href="/app/members.html">Members</a>
           </p>
         </div>
       </div>
@@ -78,7 +77,7 @@
   <nav class="mobile-nav">
     <a class="active" href="/app/dashboard.html">Home</a>
     <a href="/app/members.html">Members</a>
-    <a href="/app/create-chama.html">Chama</a>
+    <a href="/app/ops.html">Ops</a>
     <a href="#" id="logoutMobile">Logout</a>
   </nav>
   <script src="/js/api.js"></script>
@@ -123,6 +122,12 @@
       if (sub.status === 'TRIAL') badge.className = 'badge badge-trial';
       if (sub.status === 'ACTIVE') badge.className = 'badge badge-active';
       if (sub.status === 'SUSPENDED') badge.className = 'badge badge-suspended';
+
+      try {
+        const sum = await API.summary(chamaId);
+        const s = sum.data || {};
+        document.getElementById('contribTotal').textContent = 'KES ' + Number(s.contributionsTotal||0).toLocaleString();
+      } catch (_) {}
 
       const { data: members } = await API.members(chamaId);
       const tbody = document.getElementById('memberRows');

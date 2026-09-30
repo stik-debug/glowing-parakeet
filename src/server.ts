@@ -12,6 +12,9 @@ import { runMigration, getDb, generateId, nowIso } from './db/index.js';
 import { AppError } from './utils/errors.js';
 import authRoutes from './routes/auth.routes.js';
 import chamaRoutes from './routes/chama.routes.js';
+import chamaOpsRoutes from './routes/chama-ops.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || process.env.APP_PORT || '3000', 10);
@@ -89,6 +92,9 @@ app.get('/api/plans', (_req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/chamas', chamaRoutes);
+app.use('/api/chamas/:chamaId', chamaOpsRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/admin', adminRoutes);
 
 // SPA-ish: serve index for /
 app.get('/', (_req, res) => {

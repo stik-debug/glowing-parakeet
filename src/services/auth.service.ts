@@ -98,12 +98,15 @@ export async function login(input: {
     )
     .all(user.id) as { chama_id: string; role: Role }[];
 
-  const roles = [...new Set(memberships.map((m) => m.role))];
-  // Check if platform SUPER_ADMIN (stored as membership on a special chama or a flag — for now via role in any membership or a dedicated check)
-  // For SUPER_ADMIN we also support a global role via a dedicated membership or users table extension.
-  // Simpler: if any membership has SUPER_ADMIN, treat as platform admin.
-  const isSuper = memberships.some((m) => m.role === 'SUPER_ADMIN');
-  if (isSuper && !roles.includes('SUPER_ADMIN')) roles.push('SUPER_ADMIN');
+  const roles = [...new Set(memberships.map((m) => m.role))] as Role[];
+  const isSuperMembership = memberships.some((m) => m.role === 'SUPER_ADMIN');
+  const superEmails = (process.env.SUPER_ADMIN_EMAILS || process.env.SUPER_ADMIN_EMAIL || 'owner@example.test')
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (isSuperMembership || superEmails.includes(String(user.email).toLowerCase())) {
+    if (!roles.includes('SUPER_ADMIN')) roles.push('SUPER_ADMIN');
+  }
 
   const chamaIds = memberships
     .filter((m) => m.role !== 'SUPER_ADMIN')
