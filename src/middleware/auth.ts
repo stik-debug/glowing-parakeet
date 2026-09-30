@@ -1,6 +1,6 @@
 /**
  * Auth + Authorization middleware.
- * Every protected route verifies: authentication, role, chama membership, tenant boundary.
+ * Membership is verified from the database (not only JWT claims) to avoid stale tokens.
  */
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
@@ -47,7 +47,6 @@ export function requireAuth(req: AuthedRequest, _res: Response, next: NextFuncti
   }
 }
 
-/** Require one of the listed roles (global or within a chama context). */
 export function requireRoles(...roles: Role[]) {
   return (req: AuthedRequest, _res: Response, next: NextFunction): void => {
     if (!req.user) return next(new UnauthorizedError());
@@ -58,9 +57,8 @@ export function requireRoles(...roles: Role[]) {
 }
 
 /**
- * Require membership in the chama identified by :chamaId (or body/query).
- * Sets req.chamaId and req.memberRole.
- * SUPER_ADMIN bypasses membership check but still gets chamaId set.
+ * Require membership in the chama. Always verified from DB.
+ * SUPER_ADMIN bypasses membership but still receives chamaId.
  */
 export function requireChamaAccess(paramName = 'chamaId') {
   return (req: AuthedRequest, _res: Response, next: NextFunction): void => {
@@ -73,18 +71,15 @@ export function requireChamaAccess(paramName = 'chamaId') {
 
     if (!chamaId) return next(new ForbiddenError('Chama context required'));
 
-    // SUPER_ADMIN can access any chama for platform ops
+    const db = getDb();
+
+    // Platform SUPER_ADMIN (role on JWT or any membership)
     if (req.user.roles.includes('SUPER_ADMIN')) {
       req.chamaId = chamaId;
       req.memberRole = 'SUPER_ADMIN';
       return next();
     }
 
-    if (!req.user.chamaIds.includes(chamaId)) {
-      return next(new ForbiddenError('You are not a member of this Chama'));
-    }
-
-    const db = getDb();
     const member = db
       .prepare(
         `SELECT role FROM chama_members
@@ -93,7 +88,7 @@ export function requireChamaAccess(paramName = 'chamaId') {
       .get(chamaId, req.user.userId) as { role: Role } | undefined;
 
     if (!member) {
-      return next(new ForbiddenError('Active membership required'));
+      return next(new ForbiddenError('You are not a member of this Chama'));
     }
 
     req.chamaId = chamaId;
@@ -102,7 +97,6 @@ export function requireChamaAccess(paramName = 'chamaId') {
   };
 }
 
-/** Require a specific role inside the current chama (after requireChamaAccess). */
 export function requireChamaRole(...roles: Role[]) {
   return (req: AuthedRequest, _res: Response, next: NextFunction): void => {
     if (!req.user) return next(new UnauthorizedError());

@@ -1,8 +1,9 @@
 /**
- * ChamaPay API Server
- * Production-oriented Express + TypeScript backend.
+ * ChamaPay — API + product frontend
  */
 import 'dotenv/config';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -12,11 +13,11 @@ import { AppError } from './utils/errors.js';
 import authRoutes from './routes/auth.routes.js';
 import chamaRoutes from './routes/chama.routes.js';
 
-// Render (and most hosts) inject PORT — always prefer it
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || process.env.APP_PORT || '3000', 10);
 const APP_ENV = process.env.APP_ENV || 'development';
+const publicDir = path.join(process.cwd(), 'public');
 
-// Ensure schema + default plans on startup
 runMigration();
 seedPlansIfNeeded();
 
@@ -41,7 +42,12 @@ function seedPlansIfNeeded(): void {
 
 const app = express();
 
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+  })
+);
 app.use(
   cors({
     origin: (process.env.CORS_ORIGIN || '*').split(',').map((s) => s.trim()),
@@ -49,59 +55,18 @@ app.use(
   })
 );
 app.use(express.json({ limit: '100kb' }));
-
 app.use(
   rateLimit({
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10),
-    max: parseInt(process.env.RATE_LIMIT_MAX || '200', 10),
+    max: parseInt(process.env.RATE_LIMIT_MAX || '300', 10),
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Too many requests', code: 'RATE_LIMIT' },
   })
 );
 
-/** Root — avoids "Cannot GET /" on the public URL */
-app.get('/', (_req, res) => {
-  res.type('html').send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ChamaPay API</title>
-  <style>
-    :root { color-scheme: light dark; }
-    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1.25rem;
-           line-height: 1.5; color: #0f172a; background: #f8fafc; }
-    h1 { color: #065f46; margin-bottom: 0.25rem; }
-    .badge { display: inline-block; background: #059669; color: #fff; font-size: 0.75rem;
-             padding: 0.15rem 0.5rem; border-radius: 999px; vertical-align: middle; }
-    code, a { color: #047857; }
-    ul { padding-left: 1.2rem; }
-    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem; }
-    footer { margin-top: 2rem; font-size: 0.85rem; color: #64748b; }
-  </style>
-</head>
-<body>
-  <h1>ChamaPay <span class="badge">${APP_ENV}</span></h1>
-  <p>Kenyan Chama management API is running.</p>
-  <div class="card">
-    <strong>Useful endpoints</strong>
-    <ul>
-      <li><a href="/health"><code>GET /health</code></a> — health check</li>
-      <li><a href="/api/plans"><code>GET /api/plans</code></a> — subscription plans</li>
-      <li><code>POST /api/auth/register</code> — register</li>
-      <li><code>POST /api/auth/login</code> — login</li>
-      <li><code>POST /api/chamas</code> — create chama (auth required)</li>
-    </ul>
-    <p style="margin:0;font-size:0.9rem;color:#64748b">
-      Pricing is <strong>per Chama / month</strong>, not per member.<br/>
-      Status: <em>INCOMPLETE MVP</em> — Auth + Chama + member limits vertical.
-    </p>
-  </div>
-  <footer>ChamaPay API · Node ${process.version}</footer>
-</body>
-</html>`);
-});
+// Static frontend
+app.use(express.static(publicDir, { index: false, maxAge: APP_ENV === 'production' ? '15m' : 0 }));
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', env: APP_ENV, service: 'chamapay', node: process.version });
@@ -125,17 +90,28 @@ app.get('/api/plans', (_req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/chamas', chamaRoutes);
 
-// 404 for unknown routes
-app.use((req, res) => {
+// SPA-ish: serve index for /
+app.get('/', (_req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+// API 404
+app.use('/api', (req, res) => {
   res.status(404).json({
     success: false,
     error: `Cannot ${req.method} ${req.path}`,
     code: 'NOT_FOUND',
-    hint: 'Try GET / or GET /health or GET /api/plans',
   });
 });
 
-// Global error handler — never leak stack traces in production
+// Frontend 404 → home
+app.use((req, res) => {
+  if (req.accepts('html')) {
+    return res.status(404).sendFile(path.join(publicDir, 'index.html'));
+  }
+  res.status(404).json({ success: false, error: 'Not found', code: 'NOT_FOUND' });
+});
+
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   if (err instanceof AppError) {
     return res.status(err.statusCode).json({
@@ -154,5 +130,5 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[chamapay] listening on 0.0.0.0:${PORT} (${APP_ENV})`);
+  console.log(`[chamapay] http://0.0.0.0:${PORT} (${APP_ENV}) public=${publicDir}`);
 });
