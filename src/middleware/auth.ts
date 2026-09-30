@@ -16,6 +16,12 @@ export interface AuthedRequest extends Request {
   memberRole?: Role;
 }
 
+function asString(value: unknown): string {
+  if (value == null) return '';
+  if (Array.isArray(value)) return String(value[0] ?? '');
+  return String(value);
+}
+
 export function signToken(payload: AuthPayload): string {
   const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
   return jwt.sign(payload, JWT_SECRET, { expiresIn } as jwt.SignOptions);
@@ -61,9 +67,9 @@ export function requireChamaAccess(paramName = 'chamaId') {
     if (!req.user) return next(new UnauthorizedError());
 
     const chamaId =
-      (req.params[paramName] as string) ||
-      (req.body?.chamaId as string) ||
-      (req.query.chamaId as string);
+      asString(req.params[paramName]) ||
+      asString(req.body?.chamaId) ||
+      asString(req.query.chamaId);
 
     if (!chamaId) return next(new ForbiddenError('Chama context required'));
 

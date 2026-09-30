@@ -97,7 +97,7 @@ async function main() {
   if (toRemove) {
     chamaService.removeMember({
       chamaId,
-      memberId: toRemove.member_id,
+      memberId: String(toRemove.member_id),
       removedBy: admin.userId,
     });
     console.log('✓ AC-014 Soft-remove member (financial history preserved)');

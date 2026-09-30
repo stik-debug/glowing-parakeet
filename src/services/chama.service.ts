@@ -239,9 +239,18 @@ export function removeMember(input: {
   });
 }
 
-export function listMembers(chamaId: string) {
+export function listMembers(chamaId: string): Array<{
+  member_id: string;
+  role: string;
+  joined_at: string;
+  is_active: number;
+  user_id: string;
+  full_name: string;
+  email: string;
+  phone: string;
+}> {
   const db = getDb();
-  return db
+  const rows = db
     .prepare(
       `SELECT cm.id as member_id, cm.role, cm.joined_at, cm.is_active,
               u.id as user_id, u.full_name, u.email, u.phone
@@ -250,7 +259,17 @@ export function listMembers(chamaId: string) {
        WHERE cm.chama_id = ? AND cm.is_active = 1
        ORDER BY cm.joined_at`
     )
-    .all(chamaId);
+    .all(chamaId) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    member_id: String(r.member_id),
+    role: String(r.role),
+    joined_at: String(r.joined_at),
+    is_active: Number(r.is_active),
+    user_id: String(r.user_id),
+    full_name: String(r.full_name),
+    email: String(r.email),
+    phone: String(r.phone),
+  }));
 }
 
 export function getMemberCount(chamaId: string): number {

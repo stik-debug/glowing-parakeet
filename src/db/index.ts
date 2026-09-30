@@ -1,6 +1,6 @@
 /**
- * ChamaPay Database Layer — uses Node.js built-in node:sqlite (Node 22+).
- * Production path: PostgreSQL. Local: SQLite file.
+ * ChamaPay Database Layer — Node.js built-in node:sqlite (Node 22+).
+ * Production path later: PostgreSQL. Local/deploy: SQLite file.
  * All money values are INTEGER (whole KES).
  */
 import { DatabaseSync } from 'node:sqlite';
@@ -8,7 +8,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let db: DatabaseSync | null = null;
 
@@ -31,17 +32,28 @@ export function closeDb(): void {
   }
 }
 
+function resolveSchemaPath(): string {
+  // Works from src/db (tsx) and dist/db (compiled)
+  const candidates = [
+    path.join(__dirname, 'schema.sql'),
+    path.join(process.cwd(), 'src', 'db', 'schema.sql'),
+    path.join(process.cwd(), 'dist', 'db', 'schema.sql'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  throw new Error('schema.sql not found. Run postbuild or keep src/db/schema.sql.');
+}
+
 export function runMigration(): void {
   const database = getDb();
-  const schemaPath = path.join(__dirname, 'schema.sql');
-  const schema = fs.readFileSync(schemaPath, 'utf-8');
-  // Split on statement boundaries carefully
+  const schema = fs.readFileSync(resolveSchemaPath(), 'utf-8');
   database.exec(schema);
   console.log('[db] Migration applied successfully');
 }
 
 /** Execute within a transaction. Rolls back on any error. */
-export function withTransaction<T>(fn: (db: DatabaseSync) => T): T {
+export function withTransaction<T>(fn: (database: DatabaseSync) => T): T {
   const database = getDb();
   database.exec('BEGIN');
   try {
@@ -49,7 +61,11 @@ export function withTransaction<T>(fn: (db: DatabaseSync) => T): T {
     database.exec('COMMIT');
     return result;
   } catch (e) {
-    database.exec('ROLLBACK');
+    try {
+      database.exec('ROLLBACK');
+    } catch {
+      /* ignore */
+    }
     throw e;
   }
 }
