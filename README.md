@@ -1,129 +1,62 @@
-# ChamaPay
+# ChamaPay Kenya (fresh build, stage 1)
 
-Production-oriented **Kenyan Chama management SaaS** backend.
+A multi-tenant SaaS for Kenyan chamas. **Stage 1 is the money-and-security foundation plus the full Control Center and a 3D interface.** See "What is and is not built" below. Please read it.
 
-> **Status: INCOMPLETE MVP** — Vertical 1 implemented: **Auth + Chama creation + Starter member-limit enforcement**.
+## What is and is not built
 
-Pricing is **per Chama / month**, not per member.
+| Feature | Status | Notes |
+|---|---|---|
+| Registration, login, logout | Built, tested | Hashed passwords, CSRF, rate limiting, secure cookies |
+| Password reset | NOT built | Needs email/SMS. Owner can be recovered by changing env vars |
+| Roles (SUPER_ADMIN, CHAMA_ADMIN, TREASURER, SECRETARY, MEMBER) | Built, tested | Enforced on the server for every route |
+| Multi-tenant isolation | Built, tested | Chama A user gets 403 on Chama B pages and actions |
+| Chama create, members add/remove | Built, tested | Add by name + phone number. New people get an 8-digit join code to claim their account. Removal keeps history |
+| Invitations by link | NOT built | Stage 2 |
+| Plans Starter 500/15, Growth 1,500/70, Business 2,000/100 | Built, tested | In the database, editable by the owner. Per chama, never per member |
+| Member limit (16th, 71st, 101st rejected) | Built, tested | Enforced in the backend, race-safe on PostgreSQL |
+| Upgrade / downgrade | Built, tested | Upgrade = pay. Downgrade blocked if members do not fit. Nobody is auto-removed |
+| Subscription states TRIAL, ACTIVE, PAST_DUE, GRACE_PERIOD, SUSPENDED, CANCELLED | Built, tested | 7-day trial and 3-day grace, both editable |
+| Suspension keeps all data, payment auto-reactivates | Built, tested | |
+| Payments: pending/success/failed/cancelled/timeout | Built, tested | Verified server-side only |
+| Duplicate webhook protection | Built, tested | Payment, subscription extension and audit each happen once |
+| Forged / wrong-amount callbacks | Built, tested | Ignored or rejected |
+| M-Pesa STK push | Built, NOT tested live | Needs your Daraja credentials. Shows CONFIGURATION REQUIRED until set |
+| Control Center (stats, search, suspend, reactivate, extend, manual payment, plans, audit) | Built, tested | All numbers come from the database |
+| Audit log | Built, tested | Append-only, no edit/delete screens |
+| Contributions, ledger, loans, repayments, fines | NOT built | Stage 2 |
+| Meetings, attendance, announcements, messaging, notifications | NOT built | Stage 3 |
+| Reports and CSV export | NOT built | Stage 3 |
+| Email and SMS | NOT built | Shown as NOT BUILT YET, never faked |
+| Test-data commands (seed/reset/validate) | NOT built | Stage 4. Automated tests use their own throwaway database |
+| Two-factor login for owner | NOT built | Use a strong password meanwhile |
 
----
+## Tests (59 automated, all passing when this was packaged)
 
-## What's implemented
+    python -m unittest discover -s tests -v
 
-| Feature | Details |
-|---------|---------|
-| Auth | Register, login, bcrypt password hashing, JWT |
-| Roles | SUPER_ADMIN, CHAMA_ADMIN, TREASURER, SECRETARY, MEMBER (middleware ready) |
-| Multi-tenancy | Every tenant record has `chama_id`; cross-Chama access → 403 |
-| Chama | Create Chama → creator becomes CHAMA_ADMIN, starts on **TRIAL** |
-| Plans (DB) | STARTER KES 500 / 15 members · GROWTH 1500 / 70 · BUSINESS 2000 / 100 |
-| Member limits | **Server-side** enforcement (Starter 15 ok, 16 rejected) |
-| Soft remove | Members deactivated; financial history preserved by design |
-| Audit | Register, login, chama create, member add/remove logged |
-| Security | Helmet, CORS, rate limit, no plaintext passwords, clean errors |
+`test_services.py` covers plan limits, the subscription timeline, payments and idempotency. `test_web.py` covers login, CSRF, authorization, tenant isolation, suspension and the owner screens over real HTTP.
+Not covered here: a real PostgreSQL run, a real M-Pesa payment, real phones. You must test those.
 
-### Acceptance criteria covered
+## Deploy on Render
 
-- **AC-001** Register  
-- **AC-003** Login  
-- **AC-010** Create Chama  
-- **AC-013** Starter max 15 enforced  
-- **AC-014** Soft-remove member without destroying history  
+1. Create a **PostgreSQL** database. Copy its **Internal Database URL**.
+2. Create a **Web Service** from this folder. Build command: `pip install -r requirements.txt`. Start command: `gunicorn app:app --workers 2 --threads 4 --timeout 60`.
+3. Set environment variables from `.env.example`. At minimum: `AUTH_SECRET`, `DATABASE_URL`, `OWNER_EMAIL`, `OWNER_PHONE`, `OWNER_PASSWORD`, `PAY_INSTRUCTIONS`.
+4. Health check path: `/healthz`.
+5. Log in with the owner email and password. The Control Center opens. The OWNER_* settings are checked on every start: if that email already has an account it is promoted to owner, and changing OWNER_PASSWORD resets the owner password (this is your recovery method). Check the deploy logs for a line starting with `OWNER SETUP:` to see what happened.
+6. Optional but recommended: add a Render **Cron Job** running `flask --app app sweep` every hour. (Statuses also update whenever anyone opens a chama.)
 
----
+The app refuses to start in production without a 32+ character `AUTH_SECRET`. On the free PostgreSQL plan, Render may expire the database; use a paid plan and backups before real customers.
 
-## Requirements
+## Before taking real customers
 
-- **Node.js 22+** (uses built-in `node:sqlite` — no native SQLite addon)
-- npm 9+
+- PostgreSQL on a paid plan with backups. I could not run PostgreSQL where this was built; the SQL is written to work on both, but do a full click-through on your real database first.
+- Your Daraja credentials and callback URL, tested in sandbox first.
+- Register with the Office of the Data Protection Commissioner if required, and publish a privacy policy.
+- Have a few real chamas try it with small amounts.
 
----
+## How it works (for developers)
 
-## Quick start (local test)
-
-```bash
-# 1. Clone
-git clone https://github.com/YOUR_USERNAME/chamapay.git
-cd chamapay
-
-# 2. Install
-npm install
-
-# 3. Environment
-cp .env.example .env
-# Edit JWT_SECRET to a long random string before any real use
-
-# 4. Migrate + seed plans
-npx tsx src/db/migrate.ts
-
-# 5. Smoke test (Auth + Chama + member limit)
-npm run smoke
-# Expect: === SMOKE PASSED: Auth + Chama + Starter limit enforcement ===
-
-# 6. Run API
-npm run dev
-# → http://localhost:3000/health
-```
-
-### Manual API checks
-
-```bash
-# Health
-curl http://localhost:3000/health
-
-# Plans (public)
-curl http://localhost:3000/api/plans
-
-# Register
-curl -s -X POST http://localhost:3000/api/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","phone":"254712345678","password":"SecurePass1!","fullName":"Your Name"}'
-
-# Login
-curl -s -X POST http://localhost:3000/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"emailOrPhone":"you@example.com","password":"SecurePass1!"}'
-# Copy the token from the response
-
-# Create Chama
-curl -s -X POST http://localhost:3000/api/chamas \
-  -H "Authorization: Bearer YOUR_TOKEN" \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"My Chama","description":"Savings group","planCode":"STARTER"}'
-```
-
----
-
-## Project structure
-
-```
-src/
-  db/           schema.sql, migrate, connection (node:sqlite)
-  middleware/   auth + tenant guards
-  routes/       auth, chamas
-  services/     auth.service, chama.service
-  scripts/      smoke-auth-chama.ts
-  types/        shared TypeScript types
-  utils/        money (integer KES), crypto, errors
-  server.ts     Express entry
-```
-
----
-
-## Not yet implemented
-
-- Password reset, MFA  
-- TestPaymentProvider / M-Pesa + webhook idempotency  
-- Subscription lifecycle jobs (expiry → grace → suspend → reactivate)  
-- Contributions, ledger, loans, fines, meetings, messaging  
-- SUPER_ADMIN control centre  
-- Reports / CSV export  
-- Premium 3D frontend  
-
-Next recommended vertical: **payments + subscription reactivation**.
-
----
-
-## License
-
-Private / proprietary until published otherwise.
+- `db.py` schema + tiny database layer (SQLite locally, PostgreSQL in production). Money is stored as integer cents.
+- `services.py` all rules (limits, states, payments). `app.py` routes and authorization. `providers.py` Test and M-Pesa providers. The Test provider is disabled in production.
+- Payments are only applied by `process_webhook`, guarded by unique constraints on webhook event and receipt, and an `applied` flag.
